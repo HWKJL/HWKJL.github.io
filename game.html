@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Contra-like Game</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+            flex-direction: column;
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .controls button {
+            padding: 10px;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div class="controls">
+        <button id="leftBtn">后</button>
+        <button onc id="upBtn">上</button>
+        <button id="downBtn">下</button>
+        <button id="rightBtn">前</button>
+        <button id="shootBtn">攻击</button>
+    </div>
+    <script>
+        document.getElementById('leftBtn').addEventListener('mousedown', moveLeft);
+        document.getElementById('leftBtn').addEventListener('mouseup', stopX);
+        document.getElementById('rightBtn').addEventListener('mousedown', moveRight);
+        document.getElementById('rightBtn').addEventListener('mouseup', stopX);
+        document.getElementById('upBtn').addEventListener('mousedown', moveUp);
+        document.getElementById('upBtn').addEventListener('mouseup', stopY);
+        document.getElementById('downBtn').addEventListener('mousedown', moveDown);
+        document.getElementById('downBtn').addEventListener('mouseup', stopY);
+        document.getElementById('shootBtn').addEventListener('mousedown', shoot);
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+
+        // 角色
+        const player = {
+            x: 50,
+            y: 500,
+            width: 50,
+            height: 50,
+            speed: 5,
+            dx: 0,
+            dy: 0,
+            alive: true,
+            deathCount: 0,
+            health: 100,
+            maxHealth: 100
+        };
+
+        let bullets = [];
+        let enemies = [];
+        let enemyBullets = [];
+        let enemySpawnInterval = 2000; // 敌人生成间隔
+        let killCount = 0; // 杀敌数
+
+        // 控制
+        function moveRight() { player.dx = player.speed; }
+        function moveLeft() { player.dx = -player.speed; }
+        function moveUp() { player.dy = -player.speed; }
+        function moveDown() { player.dy = player.speed; }
+        function stopX() { player.dx = 0; }
+        function stopY() { player.dy = 0; }
+        function shoot() {
+            if (player.alive) {
+                bullets.push({ x: player.x + player.width, y: player.y + player.height / 2, width: 10, height: 5, speed: 7 });
+            }
+        }
+
+        // 重生玩家
+        function respawnPlayer() {
+            player.x = 50;
+            player.y = 500;
+            player.alive = true;
+            player.health = player.maxHealth;
+        }
+
+        // 更新角色位置
+        function update() {
+            if (player.alive) {
+                player.x += player.dx;
+                player.y += player.dy;
+                if (player.x < 0) player.x = 0; // 防止移出屏幕左侧
+                if (player.x + player.width > canvasWidth) player.x = canvasWidth - player.width; // 防止移出屏幕右侧
+                if (player.y < 0) player.y = 0; // 防止移出屏幕顶部
+                if (player.y + player.height > canvasHeight) player.y = canvasHeight - player.height; // 防止移出屏幕底部
+
+                // 血量自然恢复
+                if (player.health < player.maxHealth) {
+                    player.health += 0.1; // 恢复速度可调整
+                }
+            }
+
+            bullets.forEach(bullet => bullet.x += bullet.speed);
+            bullets = bullets.filter(bullet => bullet.x < canvasWidth);
+
+            enemies.forEach(enemy => {
+                // 优化的寻路功能
+                if (enemy.y < player.y) {
+                    enemy.y += enemy.speed;
+                } else if (enemy.y > player.y) {
+                    enemy.y -= enemy.speed;
+                }
+                enemy.x -= enemy.speed;
+
+                // 敌人攻击
+                if (Math.random() < 0.01) {
+                    enemyBullets.push({ x: enemy.x, y: enemy.y + enemy.height / 2, width: 10, height: 5, speed: 7 });
+                }
+            });
+            enemies = enemies.filter(enemy => enemy.x + enemy.width > 0);
+
+            enemyBullets.forEach(bullet => bullet.x -= bullet.speed);
+            enemyBullets = enemyBullets.filter(bullet => bullet.x > 0);
+
+            // 碰撞检测
+            bullets.forEach((bullet, bulletIndex) => {
+                enemies.forEach((enemy, enemyIndex) => {
+                    if (bullet.x < enemy.x + enemy.width &&
+                        bullet.x + bullet.width > enemy.x &&
+                        bullet.y < enemy.y + enemy.height &&
+                        bullet.y + bullet.height > enemy.y) {
+                        bullets.splice(bulletIndex, 1);
+                        enemy.health--;
+                        if (enemy.health <= 0) {
+                            enemies.splice(enemyIndex, 1);
+                            killCount++; // 增加杀敌数
+
+                            // 随着击杀数增加，提升玩家属性
+                            player.speed += 0.1;
+                            player.maxHealth += 1;
+                        }
+                    }
+                });
+            });
+
+            enemyBullets.forEach((bullet, bulletIndex) => {
+                if (bullet.x < player.x + player.width &&
+                    bullet.x + bullet.width > player.x &&
+                    bullet.y < player.y + player.height &&
+                    bullet.y + bullet.height > player.y) {
+                    enemyBullets.splice(bulletIndex, 1);
+                    player.health -= 10; // 减少血量
+                    if (player.health <= 0) {
+                        player.alive = false; // 玩家死亡
+                        player.deathCount++; // 增加死亡次数
+                        setTimeout(respawnPlayer, 1000); // 1秒后重生
+                    }
+                }
+            });
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        // 绘制
+        function draw() {
+            ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+            if (player.alive) {
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+            }
+
+            ctx.fillStyle = 'red';
+            bullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height));
+
+            enemies.forEach(enemy => {
+                if (enemy.type === 'normal') {
+                    ctx.fillStyle = 'green';
+                } else if (enemy.type === 'fast') {
+                    ctx.fillStyle = 'orange';
+                } else if (enemy.type === 'tank') {
+                    ctx.fillStyle = 'darkred';
+                }
+                ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            });
+
+            ctx.fillStyle = 'purple';
+            enemyBullets.forEach(bullet => ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height));
+
+            // 显示杀敌数和死亡次数
+            ctx.fillStyle = 'black';
+            ctx.font = '20px Arial';
+            ctx.fillText(`击杀: ${killCount}`, 10, 20);
+            ctx.fillText(`死亡: ${player.deathCount}`, 10, 50);
+            ctx.fillText(`血量: ${Math.round(player.health)}`, 10, 80);
+        }
+
+        // 键盘事件
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') moveRight();
+            if (e.key === 'ArrowLeft') moveLeft();
+            if (e.key === 'ArrowUp') moveUp();
+            if (e.key === 'ArrowDown') moveDown();
+            if (e.key === ' ') shoot();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') stopX();
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') stopY();
+        });
+
+        // 触摸事件（适配手机端）
+        canvas.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            const touchX = touch.clientX - canvas.getBoundingClientRect().left;
+            const touchY = touch.clientY - canvas.getBoundingClientRect().top;
+
+            if (touchX > player.x + player.width) moveRight();
+            if (touchX < player.x) moveLeft();
+            if (touchY < player.y) moveUp();
+            if (touchY > player.y + player.height) moveDown();
+        });
+
+        canvas.addEventListener('touchend', () => {
+            stopX();
+            stopY();
+        });
+
+        // 生成敌人
+        function spawnEnemy() {
+            const enemyType = Math.random();
+            let enemy;
+
+            if (enemyType < 0.5) {
+                // 普通敌人
+                enemy = {
+                    x: canvas.width,
+                    y: Math.random() * (canvas.height - 50),
+                    width: 50,
+                    height: 50,
+                    speed: 2,
+                    health: 2,
+                    type: 'normal'
+                };
+            } else if (enemyType < 0.8) {
+                // 快速敌人
+                enemy = {
+                    x: canvas.width,
+                    y: Math.random() * (canvas.height - 50),
+                    width: 50,
+                    height: 50,
+                    speed: 4,
+                    health: 1,
+                    type: 'fast'
+                };
+            } else {
+                // 坦克敌人
+                enemy = {
+                    x: canvas.width,
+                    y: Math.random() * (canvas.height - 50),
+                    width: 50,
+                    height: 50,
+                    speed: 1,
+                    health: 4,
+                    type: 'tank'
+                };
+            }
+
+            enemies.push(enemy);
+        }
+
+        setInterval(spawnEnemy, enemySpawnInterval);
+
+        update();
+    </script>
+</body>
+
+</html>
